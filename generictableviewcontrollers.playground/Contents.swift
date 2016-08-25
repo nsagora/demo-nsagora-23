@@ -3,7 +3,15 @@
 import UIKit
 import PlaygroundSupport
 
-class DataTemplate<Item, Cell: UITableViewCell> {
+protocol IDataTemplate {
+    associatedtype Item
+    associatedtype Cell: UITableViewCell
+    
+    func register(tableView: UITableView)
+    func configuredCell(tableView: UITableView, for indexPath: IndexPath, with item: Item) -> Cell
+}
+
+class DataTemplate<Item, Cell: UITableViewCell>: IDataTemplate {
     typealias CellConfiguration = (Cell, Item) -> ()
     let reuseIdentifier: String
     let configureClosure: CellConfiguration
@@ -34,15 +42,32 @@ class DataTemplate<Item, Cell: UITableViewCell> {
     }
 }
 
+class DataTemplateSelector<Wrapper>: IDataTemplate {
+    typealias DataTemplateType = DataTemplate<AnyObject, UITableViewCell>
+    var dataTemplates: [DataTemplateType]
+
+    init(dataTemplates: [DataTemplateType]) {
+        self.dataTemplates = dataTemplates
+    }
+    
+    func register(tableView: UITableView) {
+        dataTemplates.forEach { $0.register(tableView: tableView) }
+    }
+    
+    func configuredCell(tableView: UITableView, for indexPath: IndexPath, with item: Wrapper) -> UITableViewCell {
+        return UITableViewCell()
+    }
+}
+
 class ItemsViewController<
     Item,
-    Cell: UITableViewCell,
-    DataTemplateType: DataTemplate<Item, Cell>
+    DataTemplate: IDataTemplate
+    where DataTemplate.Item == Item
 >: UITableViewController {
     let items: [Item]
-    let dataTemplate: DataTemplateType
+    let dataTemplate: DataTemplate
     
-    init(items: [Item], dataTemplate: DataTemplateType) {
+    init(items: [Item], dataTemplate: DataTemplate) {
         self.items = items
         self.dataTemplate = dataTemplate
         super.init(style: .plain)
