@@ -6,37 +6,43 @@ import PlaygroundSupport
 class DataTemplate<Item, Cell: UITableViewCell> {
     typealias CellConfiguration = (Cell, Item) -> ()
     let reuseIdentifier: String
-    let configure: CellConfiguration
+    let configureClosure: CellConfiguration
     
     init(reuseIdentifier: String = "\(Cell.self)", configure: CellConfiguration) {
         self.reuseIdentifier = reuseIdentifier
-        self.configure = configure
+        configureClosure = configure
     }
     
     func register(tableView: UITableView) {
         tableView.register(Cell.self, forCellReuseIdentifier: reuseIdentifier)
     }
     
-    func dequeReusableCell(tableView: UITableView,
+    private func dequeReusableCell(tableView: UITableView,
                            for indexPath: IndexPath) -> Cell {
         return tableView.dequeueReusableCell(withIdentifier: reuseIdentifier,
                                              for: indexPath) as! Cell
     }
     
-    func configure(cell: Cell, item: Item) {
-        configure(cell, item)
+    private func configure(cell: Cell, item: Item) {
+        configureClosure(cell, item)
+    }
+    
+    func configuredCell(tableView: UITableView, for indexPath: IndexPath, with item: Item) -> Cell {
+        let cell = dequeReusableCell(tableView: tableView, for: indexPath)
+        configure(cell: cell, item: item)
+        return cell
     }
 }
 
 class ItemsViewController<
     Item,
     Cell: UITableViewCell,
-    Template: DataTemplate<Item, Cell>
+    DataTemplateType: DataTemplate<Item, Cell>
 >: UITableViewController {
     let items: [Item]
-    let dataTemplate: Template
+    let dataTemplate: DataTemplateType
     
-    init(items: [Item], dataTemplate: Template) {
+    init(items: [Item], dataTemplate: DataTemplateType) {
         self.items = items
         self.dataTemplate = dataTemplate
         super.init(style: .plain)
@@ -56,10 +62,8 @@ class ItemsViewController<
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = dataTemplate.dequeReusableCell(tableView: tableView, for: indexPath)
         let item = items[indexPath.row]
-        dataTemplate.configure(cell: cell, item: item)
-        return cell
+        return dataTemplate.configuredCell(tableView: tableView, for: indexPath,with: item)
     }
 }
 
