@@ -3,22 +3,48 @@
 import UIKit
 import PlaygroundSupport
 
-class ItemsViewController<Item, Cell: UITableViewCell>: UITableViewController {
+class DataTemplate<Item, Cell: UITableViewCell> {
     typealias CellConfiguration = (Cell, Item) -> ()
-    
-    let items: [Item]
-    let reuseIdentifier = "Cell"
+    let reuseIdentifier: String
     let configure: CellConfiguration
     
-    init(items: [Item], configure: CellConfiguration) {
-        self.items = items
+    init(reuseIdentifier: String = "\(Cell.self)", configure: CellConfiguration) {
+        self.reuseIdentifier = reuseIdentifier
         self.configure = configure
+    }
+    
+    func register(tableView: UITableView) {
+        tableView.register(Cell.self, forCellReuseIdentifier: reuseIdentifier)
+    }
+    
+    func dequeReusableCell(tableView: UITableView,
+                           for indexPath: IndexPath) -> Cell {
+        return tableView.dequeueReusableCell(withIdentifier: reuseIdentifier,
+                                             for: indexPath) as! Cell
+    }
+    
+    func configure(cell: Cell, item: Item) {
+        configure(cell, item)
+    }
+}
+
+class ItemsViewController<
+    Item,
+    Cell: UITableViewCell,
+    Template: DataTemplate<Item, Cell>
+>: UITableViewController {
+    let items: [Item]
+    let dataTemplate: Template
+    
+    init(items: [Item], dataTemplate: Template) {
+        self.items = items
+        self.dataTemplate = dataTemplate
         super.init(style: .plain)
     }
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        tableView.register(Cell.self, forCellReuseIdentifier: reuseIdentifier)
+        dataTemplate.register(tableView: tableView)
     }
     
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -30,8 +56,9 @@ class ItemsViewController<Item, Cell: UITableViewCell>: UITableViewController {
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier, for: indexPath) as! Cell
-        configure(cell, items[indexPath.row])
+        let cell = dataTemplate.dequeReusableCell(tableView: tableView, for: indexPath)
+        let item = items[indexPath.row]
+        dataTemplate.configure(cell: cell, item: item)
         return cell
     }
 }
@@ -53,11 +80,14 @@ struct Row {
 }
 
 let items = (0...10).map { Row(title:"Row \($0)", value: "\($0 * 10)") }
-
-let vc = ItemsViewController(items: items) { (cell: MyCell, item) in
+let configure = { (cell: MyCell, item: Row) -> () in
     cell.textLabel?.text = item.title
     cell.detailTextLabel?.text = item.value
 }
+
+let dataTemplate = DataTemplate(configure: configure)
+let vc = ItemsViewController(items: items, dataTemplate: dataTemplate)
+
 vc.title = "Rows"
 
 let nav = UINavigationController(rootViewController: vc)
