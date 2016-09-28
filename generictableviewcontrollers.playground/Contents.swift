@@ -16,7 +16,7 @@ struct DataTemplate<Item, Cell: UITableViewCell>: IDataTemplate {
     let reuseIdentifier: String
     let configure: CellConfiguration
     
-    init(reuseIdentifier: String = "\(Cell.self)", configure: CellConfiguration) {
+    init(reuseIdentifier: String = "\(Cell.self)", configure: @escaping CellConfiguration) {
         self.reuseIdentifier = reuseIdentifier
         self.configure = configure
     }
@@ -38,11 +38,80 @@ struct DataTemplate<Item, Cell: UITableViewCell>: IDataTemplate {
     }
 }
 
+struct AnyDataTemplate<T>: IDataTemplate {
+    let reuseIdentifier: String
+    
+    let _register: (UITableView) -> ()
+    let _configure: (UITableView, IndexPath, T) -> UITableViewCell
+    
+    init<Cell>(base: DataTemplate<T, Cell>) {
+        _register = base.register
+        _configure = base.configuredCell
+        reuseIdentifier = base.reuseIdentifier
+    }
+    
+    private init(register: @escaping (UITableView) -> (),
+                 reuseIdentifier: String,
+                 configure: @escaping (UITableView, IndexPath, T) -> UITableViewCell) {
+        _register = register
+        _configure = configure
+        self.reuseIdentifier = reuseIdentifier
+    }
+    
+    func register(tableView: UITableView) {
+        _register(tableView)
+    }
+    
+    func configuredCell(tableView: UITableView, for indexPath: IndexPath, with item: T) -> UITableViewCell {
+        return _configure(tableView, indexPath, item)
+    }
+    
+    func with<U>(item: T) -> AnyDataTemplate<U> {
+        return AnyDataTemplate<U>(register: _register,
+                                  reuseIdentifier: reuseIdentifier,
+                                  configure: { (tableView:UITableView, indexPath:IndexPath, _) -> UITableViewCell in
+                                    self._configure(tableView, indexPath, item)
+        })
+    }
+}
+
+extension DataTemplate {
+    var erased: AnyDataTemplate<Item> {
+        return AnyDataTemplate(base: self)
+    }
+}
+
+class DataTemplateSelector<Item>: IDataTemplate {
+    typealias SelectorType = (Item) -> AnyDataTemplate<Item>
+    let selector: SelectorType
+    var registered = [String]()
+    
+    init(selector: @escaping SelectorType) {
+        self.selector = selector
+    }
+    
+    func register(tableView: UITableView) {
+        
+    }
+    
+    func configuredCell(tableView: UITableView, for indexPath: IndexPath, with item: Item) -> UITableViewCell {
+        let dataTemplate = selector(item)
+        let reuseIdentifier = dataTemplate.reuseIdentifier
+        
+        if !registered.contains(reuseIdentifier) {
+            registered.append(reuseIdentifier)
+            dataTemplate.register(tableView: tableView)
+        }
+        
+        return dataTemplate.configuredCell(tableView: tableView, for: indexPath, with: item)
+    }
+}
+
 class ItemsViewController<
     Item,
-    DataTemplate: IDataTemplate
+    DataTemplate: IDataTemplate>: UITableViewController
     where DataTemplate.Item == Item
->: UITableViewController {
+ {
     let items: [Item]
     let dataTemplate: DataTemplate
     
@@ -50,6 +119,10 @@ class ItemsViewController<
         self.items = items
         self.dataTemplate = dataTemplate
         super.init(style: .plain)
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
     
     override func viewDidLoad() {
@@ -71,6 +144,29 @@ class ItemsViewController<
     }
 }
 
+struct Foo {
+    let title: String
+    let value: String
+    let isRed: Bool
+}
+
+struct Bar {
+    let title: String
+}
+
+enum FooBar {
+    case Fuh(Foo)
+    case Bur(Bar)
+}
+
+let items = (0...100).map { (index) -> FooBar in
+    if index % 5 == 0 {
+        return FooBar.Fuh(Foo(title:"Foo \(index)", value: "\(index * 10)", isRed: (index % 2 == 0)))
+    } else {
+        return FooBar.Bur(Bar(title:"Bar \(index)"))
+    }
+}
+
 class MyCell: UITableViewCell {
     override init(style: UITableViewCellStyle, reuseIdentifier: String?) {
         super.init(style: .value1, reuseIdentifier: reuseIdentifier)
@@ -84,7 +180,6 @@ class MyCell: UITableViewCell {
 
 class MyOtherCell: UITableViewCell {
     override init(style: UITableViewCellStyle, reuseIdentifier: String?) {
-        print(reuseIdentifier)
         super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
     }
     
@@ -93,89 +188,28 @@ class MyOtherCell: UITableViewCell {
     }
 }
 
-struct Row {
-    let title: String
-    let value: String
-    let isRed: Bool
-}
-
-let items = (0...10).map { Row(title:"Row \($0)", value: "\($0 * 10)", isRed: ($0 % 2 == 0)) }
-
-
-struct AnyDataTemplate<T>: IDataTemplate {
-    let _register: (UITableView) -> ()
-    let _configure: (UITableView, IndexPath, T) -> UITableViewCell
-    let reuseIdentifier: String
-    
-    init<U>(base: DataTemplate<T,U>) {
-        _register = base.register
-        _configure = base.configuredCell
-        reuseIdentifier = base.reuseIdentifier
-    }
-    
-    func register(tableView: UITableView) {
-        _register(tableView)
-    }
-    
-    func configuredCell(tableView: UITableView, for indexPath: IndexPath, with item: T) -> UITableViewCell {
-        return _configure(tableView, indexPath, item)
-    }
-}
-
-class DataTemplateSelector<Item>: IDataTemplate {
-    typealias SelectorType = (Item) -> AnyDataTemplate<Item>
-    let selector: SelectorType
-    var registered = [String]()
-    
-    init(selector: SelectorType) {
-        self.selector = selector
-    }
-    
-    func register(tableView: UITableView) {
-        
-    }
-    
-    func configuredCell(tableView: UITableView, for indexPath: IndexPath, with item: Item) -> UITableViewCell {
-        let dataTemplate = selector(item)
-        let reuseIdentifier = dataTemplate.reuseIdentifier
-        if !registered.contains(reuseIdentifier) {
-            registered.append(reuseIdentifier)
-            dataTemplate.register(tableView: tableView)
-        }
-        
-        return dataTemplate.configuredCell(tableView: tableView, for: indexPath, with: item)
-    }
-}
-
-let dataTemplate1 = DataTemplate { (cell: MyCell, item: Row) -> () in
+let dataTemplate1 = DataTemplate { (cell: MyCell, item: Foo) -> () in
     cell.textLabel?.text = item.title
     cell.detailTextLabel?.text = item.value
-    cell.textLabel?.textColor = UIColor.red()
+    cell.textLabel?.textColor = item.isRed ? UIColor.red : UIColor.green
 }
 
-let dataTemplate2 = DataTemplate { (cell: MyOtherCell, item: Row) -> () in
+let dataTemplate2 = DataTemplate { (cell: MyOtherCell, item: Bar) -> () in
     cell.textLabel?.text = item.title
-    cell.detailTextLabel?.text = item.value
-    cell.textLabel?.textColor = UIColor.blue()
+    cell.detailTextLabel?.text = "Generics & Shit"
 }
 
-let dataTemplateSelector = DataTemplateSelector { (item: Row) in
-    switch item.isRed {
-    case true:
-        return AnyDataTemplate(base: dataTemplate1)
-        
-    case false:
-        return AnyDataTemplate(base: dataTemplate2)
+let dataTemplateSelector = DataTemplateSelector { (item: FooBar) in
+    switch item {
+    case .Fuh(let foo):
+        return dataTemplate1.erased.with(item: foo)
+    case .Bur(let bar):
+        return dataTemplate2.erased.with(item: bar)
     }
 }
-
 
 let vc = ItemsViewController(items: items, dataTemplate: dataTemplateSelector)
-
-//let array: [IDataTemplate] = [dataTemplate1, dataTemplate2]
-
 vc.title = "Rows"
-
 let nav = UINavigationController(rootViewController: vc)
 
 PlaygroundPage.current.liveView = nav
